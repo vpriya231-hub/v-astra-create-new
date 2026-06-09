@@ -711,4 +711,4 @@ app.listen(PORT, () => {
   console.log(`[Firebase] Initialized: ${admin.apps.length > 0 ? '✓' : '✗'}`);
 });
 
-export default app;
+module.exports = app;
