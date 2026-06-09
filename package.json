@@ -2,7 +2,7 @@
   "name": "v-astra-create-backend",
   "version": "1.0.0",
   "description": "Secure backend for V Astra Create mobile app",
-  "type": "module",
+  "type": "commonjs",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
