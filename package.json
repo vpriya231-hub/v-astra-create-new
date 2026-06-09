@@ -1,0 +1,36 @@
+{
+  "name": "v-astra-create-backend",
+  "version": "1.0.0",
+  "description": "Secure backend for V Astra Create mobile app",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "build": "echo 'No build step required'",
+    "test": "echo 'Add tests here'"
+  },
+  "keywords": [
+    "v-astra-create",
+    "ai",
+    "app-generation",
+    "firebase",
+    "google-play-billing"
+  ],
+  "author": "V Astra Create",
+  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "axios": "^1.7.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "firebase-admin": "^12.2.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
