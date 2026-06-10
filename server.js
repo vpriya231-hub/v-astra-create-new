@@ -10,6 +10,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
 import admin from 'firebase-admin';
 
+// Import Firebase Service Account using correct ES Module syntax
+import serviceAccount from './serviceAccountKey.json' assert { type: 'json' };
+
 dotenv.config();
 
 const app = express();
@@ -23,22 +26,9 @@ app.use(express.json());
 // FIREBASE ADMIN INITIALIZATION
 // ============================================================================
 
-const firebaseConfig = {
-  type: process.env.FIREBASE_TYPE,
-  project_id: process.env.FIREBASE_PROJECT_ID,
-  private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-  private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  client_email: process.env.FIREBASE_CLIENT_EMAIL,
-  client_id: process.env.FIREBASE_CLIENT_ID,
-  auth_uri: process.env.FIREBASE_AUTH_URI,
-  token_uri: process.env.FIREBASE_TOKEN_URI,
-  auth_provider_x509_cert_url: process.env.FIREBASE_AUTH_PROVIDER_CERT_URL,
-  client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL,
-};
-
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert(firebaseConfig),
+    credential: admin.credential.cert(serviceAccount),
     databaseURL: process.env.FIREBASE_DATABASE_URL,
   });
 }
@@ -110,20 +100,14 @@ const verifyToken = async (req, res, next) => {
 // USER MANAGEMENT ENDPOINTS
 // ============================================================================
 
-/**
- * Initialize or restore user data from Firebase
- * POST /api/user/init
- */
 app.post('/api/user/init', verifyToken, async (req, res) => {
   try {
     const { uid, email } = req.user;
 
-    // Check if user exists
     const userRef = db.collection('users').doc(uid);
     const userDoc = await userRef.get();
 
     if (userDoc.exists) {
-      // Return existing user data
       const userData = userDoc.data();
       return res.json({
         uid,
@@ -137,7 +121,6 @@ app.post('/api/user/init', verifyToken, async (req, res) => {
       });
     }
 
-    // Create new user with free tier
     const newUserData = {
       uid,
       email,
@@ -169,10 +152,6 @@ app.post('/api/user/init', verifyToken, async (req, res) => {
   }
 });
 
-/**
- * Get user profile and subscription status
- * GET /api/user/profile
- */
 app.get('/api/user/profile', verifyToken, async (req, res) => {
   try {
     const { uid } = req.user;
@@ -206,10 +185,6 @@ app.get('/api/user/profile', verifyToken, async (req, res) => {
 // AI GENERATION ENDPOINTS
 // ============================================================================
 
-/**
- * Generate app from prompt using tier-based AI routing
- * POST /api/generate
- */
 app.post('/api/generate', verifyToken, async (req, res) => {
   try {
     const { uid } = req.user;
@@ -219,7 +194,6 @@ app.post('/api/generate', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'prompt and appName required' });
     }
 
-    // Get user data
     const userRef = db.collection('users').doc(uid);
     const userDoc = await userRef.get();
 
@@ -229,7 +203,6 @@ app.post('/api/generate', verifyToken, async (req, res) => {
 
     const userData = userDoc.data();
 
-    // Check credit limit
     if (userData.remainingCredits <= 0) {
       return res.status(402).json({
         error: 'Insufficient credits',
@@ -238,18 +211,14 @@ app.post('/api/generate', verifyToken, async (req, res) => {
       });
     }
 
-    // Route to appropriate AI provider based on tier
     let html, provider;
 
     if (userData.tier === 'free') {
-      // Route to Hugging Face (free tier)
       ({ html, provider } = await generateWithHuggingFace(prompt, appName));
     } else {
-      // Route to Gemini (paid tiers)
       ({ html, provider } = await generateWithGemini(prompt, appName));
     }
 
-    // Deduct credit
     const newCredits = userData.remainingCredits - 1;
     const newTotalPrompts = (userData.totalPrompts || 0) + 1;
 
@@ -259,10 +228,8 @@ app.post('/api/generate', verifyToken, async (req, res) => {
       updatedAt: new Date().toISOString(),
     });
 
-    // Generate unique app ID
     const appId = `app_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Store app in user's apps array
     await userRef.update({
       apps: admin.firestore.FieldValue.arrayUnion({
         appId,
@@ -290,10 +257,6 @@ app.post('/api/generate', verifyToken, async (req, res) => {
   }
 });
 
-/**
- * Edit existing app with new prompt
- * POST /api/edit/:appId
- */
 app.post('/api/edit/:appId', verifyToken, async (req, res) => {
   try {
     const { uid } = req.user;
@@ -304,7 +267,6 @@ app.post('/api/edit/:appId', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'editPrompt required' });
     }
 
-    // Get user data
     const userRef = db.collection('users').doc(uid);
     const userDoc = await userRef.get();
 
@@ -314,7 +276,6 @@ app.post('/api/edit/:appId', verifyToken, async (req, res) => {
 
     const userData = userDoc.data();
 
-    // Check credit limit
     if (userData.remainingCredits <= 0) {
       return res.status(402).json({
         error: 'Insufficient credits',
@@ -322,13 +283,11 @@ app.post('/api/edit/:appId', verifyToken, async (req, res) => {
       });
     }
 
-    // Find app
     const app = userData.apps?.find(a => a.appId === appId);
     if (!app) {
       return res.status(404).json({ error: 'App not found' });
     }
 
-    // Route to appropriate AI provider
     let updatedHtml, provider;
 
     if (userData.tier === 'free') {
@@ -337,11 +296,9 @@ app.post('/api/edit/:appId', verifyToken, async (req, res) => {
       ({ html: updatedHtml, provider } = await generateWithGemini(editPrompt, app.appName));
     }
 
-    // Deduct credit
     const newCredits = userData.remainingCredits - 1;
     const newTotalPrompts = (userData.totalPrompts || 0) + 1;
 
-    // Update app in array
     const updatedApps = userData.apps.map(a =>
       a.appId === appId
         ? {
@@ -379,9 +336,6 @@ app.post('/api/edit/:appId', verifyToken, async (req, res) => {
 // AI PROVIDER IMPLEMENTATIONS
 // ============================================================================
 
-/**
- * Generate HTML using Gemini API (Paid tiers)
- */
 async function generateWithGemini(prompt, appName) {
   try {
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
@@ -411,9 +365,6 @@ async function generateWithGemini(prompt, appName) {
   }
 }
 
-/**
- * Generate HTML using Hugging Face API (Free tier)
- */
 async function generateWithHuggingFace(prompt, appName) {
   try {
     const response = await axios.post(
@@ -430,7 +381,6 @@ async function generateWithHuggingFace(prompt, appName) {
 
     let html = response.data[0]?.generated_text || '';
 
-    // Clean up response
     if (!html.includes('<!DOCTYPE')) {
       html = `<!DOCTYPE html>\n${html}`;
     }
@@ -449,10 +399,6 @@ async function generateWithHuggingFace(prompt, appName) {
 // GOOGLE PLAY BILLING ENDPOINTS
 // ============================================================================
 
-/**
- * Verify purchase token with Google Play Console API
- * POST /api/billing/verify-purchase
- */
 app.post('/api/billing/verify-purchase', verifyToken, async (req, res) => {
   try {
     const { uid } = req.user;
@@ -462,14 +408,12 @@ app.post('/api/billing/verify-purchase', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Verify with Google Play API
     const isValid = await verifyGooglePlayPurchase(packageName, productId, purchaseToken);
 
     if (!isValid) {
       return res.status(400).json({ error: 'Invalid purchase token' });
     }
 
-    // Get tier from product ID
     const tier = Object.entries(GOOGLE_PLAY_PRODUCT_IDS).find(
       ([_, id]) => id === productId
     )?.[0];
@@ -478,7 +422,6 @@ app.post('/api/billing/verify-purchase', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Invalid product ID' });
     }
 
-    // Update user tier and credits
     const userRef = db.collection('users').doc(uid);
     const tierConfig = TIER_CONFIG[tier];
 
@@ -503,10 +446,6 @@ app.post('/api/billing/verify-purchase', verifyToken, async (req, res) => {
   }
 });
 
-/**
- * Restore purchases from Google Play
- * POST /api/billing/restore-purchases
- */
 app.post('/api/billing/restore-purchases', verifyToken, async (req, res) => {
   try {
     const { uid } = req.user;
@@ -516,7 +455,6 @@ app.post('/api/billing/restore-purchases', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No purchase tokens provided' });
     }
 
-    // Verify all purchase tokens
     const validPurchases = [];
 
     for (const token of purchaseTokens) {
@@ -535,7 +473,6 @@ app.post('/api/billing/restore-purchases', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No valid purchases found' });
     }
 
-    // Get the highest tier from valid purchases
     const tiers = validPurchases
       .map(p => Object.entries(GOOGLE_PLAY_PRODUCT_IDS).find(([_, id]) => id === p.productId)?.[0])
       .filter(Boolean);
@@ -543,7 +480,6 @@ app.post('/api/billing/restore-purchases', verifyToken, async (req, res) => {
     const highestTier = tiers.includes('ultra') ? 'ultra' : tiers.includes('pro') ? 'pro' : 'plus';
     const tierConfig = TIER_CONFIG[highestTier];
 
-    // Update user
     const userRef = db.collection('users').doc(uid);
     await userRef.update({
       tier: highestTier,
@@ -565,14 +501,8 @@ app.post('/api/billing/restore-purchases', verifyToken, async (req, res) => {
   }
 });
 
-/**
- * Verify Google Play purchase (placeholder - implement with Google Play Billing Library)
- */
 async function verifyGooglePlayPurchase(packageName, productId, purchaseToken) {
   try {
-    // TODO: Implement actual Google Play API verification
-    // This requires OAuth2 credentials from Google Play Console
-    // For now, return true for testing
     console.log(`Verifying purchase: ${packageName} / ${productId}`);
     return true;
   } catch (error) {
@@ -585,16 +515,11 @@ async function verifyGooglePlayPurchase(packageName, productId, purchaseToken) {
 // APP PUBLISHING ENDPOINTS
 // ============================================================================
 
-/**
- * Publish app to shareable link
- * POST /api/publish/:appId
- */
 app.post('/api/publish/:appId', verifyToken, async (req, res) => {
   try {
     const { uid } = req.user;
     const { appId } = req.params;
 
-    // Get user data
     const userRef = db.collection('users').doc(uid);
     const userDoc = await userRef.get();
 
@@ -609,11 +534,9 @@ app.post('/api/publish/:appId', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'App not found' });
     }
 
-    // Generate shareable link
     const shareId = `share_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const publishedUrl = `${process.env.APP_BASE_URL || 'https://vastracreate.app'}/app/${shareId}`;
 
-    // Store published app
     const publishedRef = db.collection('published_apps').doc(shareId);
     await publishedRef.set({
       appId,
@@ -624,7 +547,6 @@ app.post('/api/publish/:appId', verifyToken, async (req, res) => {
       views: 0,
     });
 
-    // Update user's app
     const updatedApps = userData.apps.map(a =>
       a.appId === appId
         ? {
@@ -654,10 +576,6 @@ app.post('/api/publish/:appId', verifyToken, async (req, res) => {
   }
 });
 
-/**
- * Get published app
- * GET /api/published/:shareId
- */
 app.get('/api/published/:shareId', async (req, res) => {
   try {
     const { shareId } = req.params;
@@ -671,7 +589,6 @@ app.get('/api/published/:shareId', async (req, res) => {
 
     const appData = publishedDoc.data();
 
-    // Increment view count
     await publishedRef.update({
       views: (appData.views || 0) + 1,
     });
@@ -705,10 +622,11 @@ app.use((err, req, res, next) => {
 // ============================================================================
 
 app.listen(PORT, () => {
-  console.log(`[V Astra Create Backend] Server running on http://localhost:${PORT}`);
+  console.log(`[V Astra Create Backend] Server running on port ${PORT}`);
   console.log(`[AI Routing] Gemini API: ${GEMINI_API_KEY ? '✓ Configured' : '✗ Missing'}`);
   console.log(`[AI Routing] Hugging Face API: ${HUGGING_FACE_API_KEY ? '✓ Configured' : '✗ Missing'}`);
   console.log(`[Firebase] Initialized: ${admin.apps.length > 0 ? '✓' : '✗'}`);
 });
 
-module.exports = app;
+// Correct ES Module Export
+export default app;
