@@ -11,7 +11,8 @@ import axios from 'axios';
 import admin from 'firebase-admin';
 
 // Import Firebase Service Account using correct ES Module syntax
-import serviceAccount from './serviceAccountKey.json' assert { type: 'json' };
+import serviceAccount from './serviceAccountKey.json' with { type: 'json' };
+
 
 dotenv.config();
 
